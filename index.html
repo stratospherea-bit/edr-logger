@@ -65,14 +65,27 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
 .chartBox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:280px;display:flex}
 #chart{width:100%;height:100%;min-height:264px;display:block}
 
-.marks{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px}
-.marks .lbl{color:var(--dim);font-size:14px;margin-right:4px}
+.calrow .lbl{color:var(--dim);font-size:14px}
 .mk{min-width:84px;font-weight:600}
 .mk[data-c="LGT"]{color:var(--green);border-color:var(--green)}
 .mk[data-c="MOD"]{color:var(--amber);border-color:var(--amber)}
 .mk[data-c="SEV"]{color:var(--red);border-color:var(--red)}
-.mk[data-c="memo"]{color:var(--cyan);border-color:var(--cyan)}
-#lastMark{color:var(--dim);font-size:14px}
+.mk[data-c="memo"],.mk[data-c="edr"]{color:var(--cyan);border-color:var(--cyan)}
+#lastMark{color:var(--dim);font-size:14px;flex-basis:100%}
+.panel{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.panel h3{font-size:14px;font-weight:500;color:var(--dim);margin:0 0 8px}
+.fstate{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px 18px}
+.fstate label{display:flex;flex-direction:column;gap:4px;font-size:15px}
+.fstate .now{color:var(--cyan);font-size:13px}
+.fstate input,.calrow input{
+  font:inherit;color:var(--cyan);background:var(--bg);border:1px solid var(--line);
+  border-radius:6px;min-height:44px;padding:0 10px;font-variant-numeric:tabular-nums;width:100%;
+}
+.calrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.calrow .grp{display:flex;align-items:center;gap:8px}
+.calrow input{width:110px}
+.kline{color:var(--dim);font-size:14px;margin:10px 0 0}
+.kline b{color:var(--text);font-weight:500}
 
 h2{font-size:16px;font-weight:600;margin:28px 0 8px}
 .sessions{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
@@ -130,14 +143,47 @@ footer{margin-top:32px;color:var(--dim);font-size:13px}
   <div class="chartBox"><canvas id="chart" aria-label="垂直加速度Δgの直近2分間の波形"></canvas></div>
 </section>
 
-<div class="marks">
-  <span class="lbl">体感を記録</span>
-  <button class="mk" data-c="LGT" type="button" disabled>LGT</button>
-  <button class="mk" data-c="MOD" type="button" disabled>MOD</button>
-  <button class="mk" data-c="SEV" type="button" disabled>SEV</button>
-  <button class="mk" data-c="memo" type="button" disabled>メモ</button>
-  <span id="lastMark" class="num"></span>
-</div>
+<section class="panel">
+  <h3>飛行状態（入力すると、その時点から反映）</h3>
+  <div class="fstate num">
+    <label>現在重量（lbs）
+      <input id="inW" type="number" inputmode="numeric" step="1000" min="10000" max="2000000" placeholder="入力して更新">
+      <span class="now" id="nowW"></span>
+    </label>
+    <label>燃料消費量（lbs/分）
+      <input id="inBurn" type="number" inputmode="numeric" step="10" min="0" max="2000" placeholder="入力して更新">
+      <span class="now" id="nowBurn"></span>
+    </label>
+    <label>TAS（kt）
+      <input id="inTas" type="number" inputmode="numeric" step="1" min="100" max="650" placeholder="空欄で基準値">
+      <span class="now" id="nowTas"></span>
+    </label>
+    <label>FL
+      <input id="inFl" type="number" inputmode="numeric" step="10" min="0" max="510" placeholder="空欄でGPS">
+      <span class="now" id="nowFl"></span>
+    </label>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>体感・機体EDRを入力（記録中に入力すると k₀ を自動校正）</h3>
+  <div class="calrow">
+    <div class="grp">
+      <span class="lbl">体感</span>
+      <button class="mk" data-c="LGT" type="button" disabled>LGT</button>
+      <button class="mk" data-c="MOD" type="button" disabled>MOD</button>
+      <button class="mk" data-c="SEV" type="button" disabled>SEV</button>
+    </div>
+    <div class="grp">
+      <span class="lbl">機体EDR</span>
+      <input id="inEdr" class="num" type="number" inputmode="decimal" step="0.01" min="0" max="2" placeholder="0.18" disabled>
+      <button class="mk" data-c="edr" id="edrBtn" type="button" disabled>校正</button>
+    </div>
+    <button class="mk" data-c="memo" type="button" disabled>メモ</button>
+    <span id="lastMark" class="num"></span>
+  </div>
+  <p class="kline num" id="kline"></p>
+</section>
 
 <h2>記録したフライト</h2>
 <ul class="sessions" id="sessions"></ul>
@@ -148,7 +194,7 @@ footer{margin-top:32px;color:var(--dim);font-size:13px}
   <div class="settingsActions"><button type="button" id="resetSettings">初期値に戻す</button></div>
 </details>
 
-<footer>v1.0　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
+<footer>v1.1　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
 
 <script>
 'use strict';
@@ -161,9 +207,16 @@ const CHART_SPAN = 120000;     // グラフ表示幅 2分
 const BIN_MS = 100;
 
 /* ---------- 設定 ---------- */
-const DEF = {k:4.0, win:10, thL:0.10, thM:0.25, thS:0.45, hp:0.1, lp:2.0, gps:true};
+const DEF = {kInit:4.0, k0:4.0, calN:0, win:10, thL:0.10, thM:0.25, thS:0.45,
+             wStart:1000000, burn:400, wRef:1000000, flRef:350, tasRef:480,
+             hp:0.1, lp:2.0, gps:true};
 const SPEC = [
-  ['k',  '係数 k',        '推定EDR = k × σΔg。機体のEDRと見比べて調整します', 0.1, 0.5, 50],
+  ['kInit','初期の係数 k₀', '基準状態での係数。変更すると校正結果はリセットされ、この値から校正し直します', 0.1, 0.5, 50],
+  ['wStart','初期重量（lbs）', '記録開始時の重量。飛行中に入力がなければ、ここから消費量に応じて減っていきます', 1000, 10000, 2000000],
+  ['burn','燃料消費量（lbs/分）', '飛行中に入力がない場合に使う値', 10, 0, 2000],
+  ['wRef','基準重量（lbs）', 'k₀ を定義する基準状態', 1000, 10000, 2000000],
+  ['flRef','基準FL', 'k₀ を定義する基準状態。GPSも入力もないときはこの高度を使います', 10, 0, 510],
+  ['tasRef','基準TAS（kt）', 'k₀ を定義する基準状態。TASの入力がないときはこの値を使います', 1, 100, 650],
   ['win','集計窓（秒）',   'σΔgとピークを計算する時間幅', 1, 2, 60],
   ['thL','LGT のしきい値', '推定EDRがこの値以上でLGT', 0.01, 0, 2],
   ['thM','MOD のしきい値', '推定EDRがこの値以上でMOD', 0.01, 0, 2],
@@ -173,7 +226,12 @@ const SPEC = [
 ];
 let S = loadSettings();
 function loadSettings(){
-  try { return {...DEF, ...JSON.parse(localStorage.getItem('edr-settings') || '{}')}; }
+  try {
+    const o = JSON.parse(localStorage.getItem('edr-settings') || '{}');
+    if (o.k != null && o.kInit == null){ o.kInit = o.k; o.k0 = o.k; }   // v1.0からの移行
+    delete o.k;
+    return {...DEF, ...o};
+  }
   catch { return {...DEF}; }
 }
 function saveSettings(){ try { localStorage.setItem('edr-settings', JSON.stringify(S)); } catch {} }
@@ -189,7 +247,9 @@ function buildSettings(){
       let v = parseFloat(inp.value);
       if (!isFinite(v)) v = DEF[key];
       v = Math.min(max, Math.max(min, v));
-      S[key] = v; inp.value = v; saveSettings(); updateCalib();
+      S[key] = v; inp.value = v;
+      if (key === 'kInit'){ S.k0 = v; S.calN = 0; }
+      saveSettings(); updateCalib();
     });
     const h = document.createElement('span'); h.className = 'help'; h.textContent = help;
     l.append(inp, h); box.append(l);
@@ -199,9 +259,83 @@ function buildSettings(){
   cb.addEventListener('change', () => { S.gps = cb.checked; saveSettings(); });
   c.append(cb, document.createTextNode('GPSで位置・高度・対地速度も記録する（次の記録開始から反映）'));
   box.append(c);
+  const cal = document.createElement('div'); cal.className = 'label';
+  cal.innerHTML = '<span id="calStatus" class="num"></span>';
+  const rb = document.createElement('button'); rb.type = 'button'; rb.textContent = '校正をリセット';
+  rb.addEventListener('click', () => {
+    if (!confirm(`校正結果を破棄して k₀ を初期値 ${S.kInit} に戻します。`)) return;
+    S.k0 = S.kInit; S.calN = 0; saveSettings(); updateCalib();
+  });
+  cal.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:15px';
+  cal.append(rb); box.append(cal);
 }
-$('#resetSettings').addEventListener('click', () => { S = {...DEF}; saveSettings(); buildSettings(); updateCalib(); });
-function updateCalib(){ $('#calib').textContent = `係数 k = ${S.k}、集計窓 ${S.win} 秒`; }
+$('#resetSettings').addEventListener('click', () => {
+  if (!confirm('すべての設定と校正結果を初期値に戻します。')) return;
+  S = {...DEF}; saveSettings(); buildSettings(); updateCalib();
+});
+function updateCalib(){
+  const f = flightState();
+  $('#calib').textContent = `集計窓 ${S.win} 秒`;
+  $('#kline').innerHTML = `k = <b>${f.k.toFixed(2)}</b>（k₀ ${S.k0.toFixed(2)} × 補正 ${f.corr.toFixed(2)}）、校正点 ${S.calN}`;
+  const cs = $('#calStatus');
+  if (cs) cs.textContent = `現在の校正値 k₀ = ${S.k0.toFixed(2)}（校正点 ${S.calN}）`;
+  updateFlightUI(f);
+}
+
+/* ---------- 飛行状態と k の補正 ---------- */
+// k = k₀ × (W/W基準) × (ρ基準·V基準)/(ρ·V)　突風荷重の式 Δn ∝ ρ·V/(W/S) による
+const FS = {wAnchor:null, tAnchor:0, burn:null, tas:null, fl:null};
+function rho(fl){                       // 標準大気の密度比
+  const h = Math.min(Math.max(fl, 0), 600)*30.48;
+  return h <= 11000 ? Math.pow(1 - 2.25577e-5*h, 4.2559) : 0.29707*Math.exp(-(h - 11000)/6341.6);
+}
+function currentWeight(){
+  const w0 = FS.wAnchor ?? S.wStart, burn = FS.burn ?? S.burn;
+  const mins = st.running && FS.tAnchor ? (Date.now() - FS.tAnchor)/60000 : 0;
+  return Math.max(0, w0 - burn*mins);
+}
+function flightState(){
+  const W = currentWeight();
+  let fl, flSrc;
+  if (FS.fl != null){ fl = FS.fl; flSrc = 'input'; }
+  else if (st.pos && st.pos.altitude != null && Date.now() - st.posT < 10000){ fl = st.pos.altitude/0.3048/100; flSrc = 'gps'; }
+  else { fl = S.flRef; flSrc = 'ref'; }
+  const tas = FS.tas ?? S.tasRef, tasSrc = FS.tas != null ? 'input' : 'ref';
+  const corr = (W/S.wRef) * (rho(S.flRef)*S.tasRef) / (rho(fl)*tas);
+  return {W, fl, flSrc, tas, tasSrc, corr, k:S.k0*corr};
+}
+const SRC = {input:'入力値', gps:'GPS', ref:'基準値'};
+function updateFlightUI(f){
+  $('#nowW').textContent = `現在 ${Math.round(f.W).toLocaleString('en-US')} lbs`;
+  $('#nowBurn').textContent = `${FS.burn ?? S.burn} lbs/分で減少中`;
+  if (!st.running) $('#nowBurn').textContent = `${FS.burn ?? S.burn} lbs/分（記録中に減少）`;
+  $('#nowTas').textContent = `${Math.round(f.tas)} kt（${SRC[f.tasSrc]}）`;
+  $('#nowFl').textContent = `FL${Math.round(f.fl)}（${SRC[f.flSrc]}）`;
+}
+function numIn(el, min, max){
+  const v = parseFloat(el.value);
+  if (el.value.trim() === '') return null;
+  if (!isFinite(v) || v < min || v > max){ setMsg(`${min}〜${max} の範囲で入力してください。`); return undefined; }
+  return v;
+}
+$('#inW').addEventListener('change', e => {
+  const v = numIn(e.target, 10000, 2000000); if (v == null) return;
+  FS.wAnchor = v; FS.tAnchor = st.running ? Date.now() : 0;
+  e.target.value = ''; setMsg(''); updateCalib();
+});
+$('#inBurn').addEventListener('change', e => {
+  const v = numIn(e.target, 0, 2000); if (v == null) return;
+  FS.wAnchor = currentWeight(); FS.tAnchor = st.running ? Date.now() : 0;   // ここまでの消費を確定
+  FS.burn = v; e.target.value = ''; setMsg(''); updateCalib();
+});
+$('#inTas').addEventListener('change', e => {
+  const v = numIn(e.target, 100, 650); if (v === undefined) return;
+  FS.tas = v; setMsg(''); updateCalib();
+});
+$('#inFl').addEventListener('change', e => {
+  const v = numIn(e.target, 0, 510); if (v === undefined) return;
+  FS.fl = v; setMsg(''); updateCalib();
+});
 
 /* ---------- フィルタ（RBJ biquad） ---------- */
 function makeBiquad(type, f0, fs, Q = Math.SQRT1_2){
@@ -290,8 +424,11 @@ function tick(){
     if (st.bt[i] >= from1 && av > pk1) pk1 = av;
   }
   if (n < 10) return;
-  const sigma = Math.sqrt(ss/n), edr = S.k*sigma, cat = category(edr);
+  const f = flightState();
+  const sigma = Math.sqrt(ss/n), edr = f.k*sigma, cat = category(edr);
   st.cat = cat;
+  st.last = {t:now, sigma, edr, cat, corr:f.corr};
+  updateCalib();
   $('#edr').textContent = edr.toFixed(2);
   $('#cat').textContent = cat;
   $('#readout').dataset.cat = cat;
@@ -299,7 +436,8 @@ function tick(){
   $('#peak').textContent = pk.toFixed(2) + ' g';
 
   const rec = {sid:st.session.id, t:Date.now(), sigma, peak:pk, peak1s:pk1, edr, cat,
-               fs:st.dtEma ? 1/st.dtEma : st.fs, k:S.k, win:S.win};
+               fs:st.dtEma ? 1/st.dtEma : st.fs, kEff:f.k, k0:S.k0, corr:f.corr, win:S.win,
+               W:f.W, fl:f.fl, flSrc:f.flSrc, tas:f.tas, tasSrc:f.tasSrc};
   if (st.pos && Date.now() - st.posT < 10000){
     const c = st.pos;
     Object.assign(rec, {lat:c.latitude, lon:c.longitude, alt:c.altitude, gs:c.speed, trk:c.heading, acc:c.accuracy});
@@ -440,7 +578,8 @@ async function start(){
   }
   Object.assign(st, {running:true, fs:60, dtEma:0, lastT:0, nSamples:0, redesigned:false, g:null, cur:0,
     bt:[], by:[], head:0, bins:[], pending:[], pendingMarks:[], count:0, maxEdr:0, cat:'NIL',
-    pos:null, posT:0, stalled:false});
+    pos:null, posT:0, stalled:false, last:null});
+  FS.tAnchor = Date.now();
   designFilters();
   st.t0 = st.lastSample = performance.now();
   const id = Date.now();
@@ -456,6 +595,7 @@ async function start(){
   }
   $('#startBtn').textContent = '記録停止'; $('#startBtn').classList.add('running');
   document.querySelectorAll('.mk').forEach(b => b.disabled = false);
+  $('#inEdr').disabled = false;
   $('#lastMark').textContent = '';
   ['#sigma','#peak','#cur'].forEach(s => $(s).textContent = '—');
   updateStatus(); draw(performance.now()); renderSessions();
@@ -470,6 +610,10 @@ async function stop(){
   st.session = null;
   $('#startBtn').textContent = '記録開始'; $('#startBtn').classList.remove('running');
   document.querySelectorAll('.mk').forEach(b => b.disabled = true);
+  $('#inEdr').disabled = true;
+  Object.assign(FS, {wAnchor:null, tAnchor:0, burn:null, tas:null, fl:null});   // 次のフライトは既定値から
+  ['#inW','#inBurn','#inTas','#inFl'].forEach(id => $(id).value = '');
+  updateCalib();
   setMsg(''); updateStatus(); renderSessions();
 }
 $('#startBtn').addEventListener('click', () => st.running ? stop() : start());
@@ -489,16 +633,49 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => { if (st.running) flush(); });
 
 /* ---------- 体感マーク ---------- */
+// 校正: k₀ を観測値から求めた k₀ 候補へ少しずつ近づける
+function calibrate(target, weight){
+  const L = st.last;
+  if (!L || performance.now() - L.t > 3000) return {ok:false, text:'計測値がまだないため校正できません'};
+  if (L.sigma < 0.005) return {ok:false, text:'揺れが小さすぎるため校正に使いません'};
+  const old = S.k0;
+  let kS = target/(L.sigma*L.corr);
+  kS = Math.min(old*3, Math.max(old/3, kS));          // 1回で極端に動かさない
+  const a = Math.max(0.1, 1/(S.calN + 2)) * weight;
+  S.k0 = old + a*(kS - old); S.calN++;
+  saveSettings(); updateCalib();
+  return {ok:true, text:`k₀ ${old.toFixed(2)} → ${S.k0.toFixed(2)}`};
+}
+const RANGE = () => ({LGT:[S.thL, S.thM, (S.thL+S.thM)/2], MOD:[S.thM, S.thS, (S.thM+S.thS)/2], SEV:[S.thS, Infinity, S.thS*1.2]});
+function addMark(t, note){
+  st.pendingMarks.push({sid:st.session.id, t, note});
+  $('#lastMark').textContent = `${fmtZ(t, true)} ${note}`;
+}
 document.querySelectorAll('.mk').forEach(b => b.addEventListener('click', () => {
   if (!st.running) return;
   const t = Date.now();                     // 押した瞬間の時刻で記録
-  let note = b.dataset.c;
-  if (note === 'memo'){
-    note = prompt('メモ（例: 機体EDR 0.18、FL370 MOD CAT など）');
-    if (!note) return;
+  const c = b.dataset.c;
+  if (c === 'memo'){
+    const note = prompt('メモ（例: FL370 MOD CAT、ATCからの情報 など）');
+    if (note) addMark(t, note);
+    return;
   }
-  st.pendingMarks.push({sid:st.session.id, t, note});
-  $('#lastMark').textContent = `${fmtZ(t, true)} ${note}`;
+  if (c === 'edr'){
+    const v = parseFloat($('#inEdr').value);
+    if (!(v >= 0.05 && v <= 2)){ setMsg('機体EDRは 0.05〜2.00 の値を入力してください（ほぼ揺れていない値は校正に使いません）。'); return; }
+    setMsg('');
+    const r = calibrate(v, 1);
+    addMark(t, `機体EDR ${v.toFixed(2)}（${r.text}）`);
+    $('#inEdr').value = '';
+    return;
+  }
+  // 体感カテゴリ: 推定値が範囲外のときだけ、範囲の代表値に向けて半分の重みで校正
+  const [lo, hi, mid] = RANGE()[c];
+  const e = st.last ? st.last.edr : null;
+  if (e == null){ addMark(t, c); return; }
+  if (e >= lo && e < hi){ addMark(t, `${c}（推定EDR ${e.toFixed(2)} は範囲内、k₀ 変更なし）`); return; }
+  const r = calibrate(mid, 0.5);
+  addMark(t, `${c}（推定EDR ${e.toFixed(2)}、${r.text}）`);
 }));
 
 /* ---------- 記録一覧・エクスポート ---------- */
@@ -540,11 +717,13 @@ async function exportCsv(s){
   }
   const q = v => v == null || (typeof v === 'number' && !isFinite(v)) ? '' : v;
   const f = (v, d) => v == null || !isFinite(v) ? '' : v.toFixed(d);
-  const lines = ['time_utc,elapsed_s,edr_est,sigma_dg,peak_dg_window,peak_dg_1s,category,sample_hz,k,window_s,lat,lon,gps_alt_m,gps_alt_ft,ground_speed_kt,track_deg,gps_acc_m,mark'];
+  const lines = ['time_utc,elapsed_s,edr_est,sigma_dg,peak_dg_window,peak_dg_1s,category,k_eff,k0,correction,weight_lbs,fl,fl_src,tas_kt,tas_src,sample_hz,window_s,lat,lon,gps_alt_m,gps_alt_ft,ground_speed_kt,track_deg,gps_acc_m,mark'];
   for (const r of recs){
     lines.push([
       new Date(r.t).toISOString(), Math.round((r.t - s.start)/1000),
-      f(r.edr,3), f(r.sigma,4), f(r.peak,3), f(r.peak1s,3), r.cat, f(r.fs,1), q(r.k), q(r.win),
+      f(r.edr,3), f(r.sigma,4), f(r.peak,3), f(r.peak1s,3), r.cat,
+      f(r.kEff ?? r.k,3), f(r.k0,3), f(r.corr,3), f(r.W,0), f(r.fl,0), q(r.flSrc), f(r.tas,0), q(r.tasSrc),
+      f(r.fs,1), q(r.win),
       f(r.lat,6), f(r.lon,6), f(r.alt,0), r.alt == null ? '' : f(r.alt*3.28084,0),
       r.gs == null ? '' : f(r.gs*1.943844,0), f(r.trk,0), f(r.acc,0),
       r.mark ? '"' + String(r.mark).replace(/"/g,'""') + '"' : ''
