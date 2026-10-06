@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1E242C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EDR Logger">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>EDR Logger</title>
+<style>
+:root{
+  --bg:#1E242C; --panel:#252C35; --line:#38414C; --text:#E6EAEE; --dim:#8693A0;
+  --green:#5BE37D; --amber:#F2A93B; --red:#FF5A52; --cyan:#46CDE0;
+  color-scheme:dark;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{
+  font-family:-apple-system,system-ui,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
+  font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px));
+  max-width:1280px;margin:0 auto;
+}
+.num{font-variant-numeric:tabular-nums}
+header{display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line)}
+h1{font-size:18px;font-weight:600;margin:0}
+.status{display:flex;gap:6px 18px;flex-wrap:wrap;color:var(--dim);font-size:14px;margin-right:auto}
+.status b{font-weight:500;color:var(--text)}
+.status .ok{color:var(--green)} .status .warn{color:var(--amber)}
+button{
+  font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);
+  border-radius:6px;min-height:48px;padding:0 18px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+button:active{filter:brightness(1.3)}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+#startBtn{min-width:150px;font-weight:600;border-color:var(--green);color:var(--green)}
+#startBtn.running{border-color:var(--amber);color:var(--amber)}
+#msg{margin:12px 0 0;padding:10px 14px;border-left:3px solid var(--amber);background:var(--panel);color:var(--amber);font-size:15px}
+#msg[hidden]{display:none}
+
+.live{display:grid;grid-template-columns:minmax(250px,300px) 1fr;gap:16px;margin-top:16px}
+@media (max-width:760px){.live{grid-template-columns:1fr}}
+.readout{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.readout .lbl{color:var(--dim);font-size:14px}
+.edrRow{display:flex;align-items:baseline;gap:14px}
+.edr{font-size:clamp(64px,10vw,112px);font-weight:300;line-height:1;letter-spacing:-.02em;color:var(--dim)}
+.cat{font-size:28px;font-weight:600;color:var(--dim)}
+.readout[data-cat="LGT"] .edr,.readout[data-cat="LGT"] .cat{color:var(--green)}
+.readout[data-cat="MOD"] .edr,.readout[data-cat="MOD"] .cat{color:var(--amber)}
+.readout[data-cat="SEV"] .edr,.readout[data-cat="SEV"] .cat{color:var(--red)}
+.readout[data-cat="NIL"] .edr{color:var(--text)}
+.stats{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:6px 0 0;font-size:17px}
+.stats dt{color:var(--dim);font-size:14px;align-self:center}
+.stats dd{margin:0;text-align:right}
+.sub{color:var(--dim);font-size:13px;margin:0}
+
+.chartBox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:280px;display:flex}
+#chart{width:100%;height:100%;min-height:264px;display:block}
+
+.marks{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px}
+.marks .lbl{color:var(--dim);font-size:14px;margin-right:4px}
+.mk{min-width:84px;font-weight:600}
+.mk[data-c="LGT"]{color:var(--green);border-color:var(--green)}
+.mk[data-c="MOD"]{color:var(--amber);border-color:var(--amber)}
+.mk[data-c="SEV"]{color:var(--red);border-color:var(--red)}
+.mk[data-c="memo"]{color:var(--cyan);border-color:var(--cyan)}
+#lastMark{color:var(--dim);font-size:14px}
+
+h2{font-size:16px;font-weight:600;margin:28px 0 8px}
+.sessions{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.sessions li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:10px 0;border-bottom:1px solid var(--line)}
+.sessions .when{font-weight:500;min-width:170px}
+.sessions .meta{color:var(--dim);font-size:14px;margin-right:auto}
+.sessions button{min-height:40px;padding:0 14px;font-size:15px}
+.sessions .del{color:var(--red)}
+.empty{color:var(--dim);font-size:15px;padding:10px 0}
+
+details{margin-top:28px;border-top:1px solid var(--line);padding-top:8px}
+summary{font-weight:600;cursor:pointer;padding:8px 0;min-height:44px;display:flex;align-items:center}
+.settings{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px 24px;margin-top:8px}
+.settings label{display:flex;flex-direction:column;gap:4px;font-size:15px}
+.settings .help{color:var(--dim);font-size:13px}
+.settings input[type=number]{
+  font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);
+  border-radius:6px;min-height:44px;padding:0 10px;font-variant-numeric:tabular-nums;width:100%;
+}
+.settings label.check{flex-direction:row;align-items:center;gap:10px}
+.settings input[type=checkbox]{width:24px;height:24px;accent-color:var(--cyan)}
+.settingsActions{margin-top:14px}
+footer{margin-top:32px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>EDR Logger</h1>
+  <div class="status num" id="status">
+    <span>サンプリング <b id="stHz">—</b></span>
+    <span>GPS <b id="stGps">—</b></span>
+    <span>画面維持 <b id="stWake">—</b></span>
+    <span>記録 <b id="stRec">—</b></span>
+  </div>
+  <button id="startBtn" type="button">記録開始</button>
+</header>
+
+<p id="msg" role="status" hidden></p>
+
+<section class="live">
+  <div class="readout" id="readout" data-cat="">
+    <span class="lbl">推定EDR</span>
+    <div class="edrRow">
+      <span class="edr num" id="edr">—</span>
+      <span class="cat" id="cat"></span>
+    </div>
+    <dl class="stats num">
+      <dt>σΔg</dt><dd id="sigma">—</dd>
+      <dt>ピークΔg</dt><dd id="peak">—</dd>
+      <dt>現在Δg</dt><dd id="cur">—</dd>
+    </dl>
+    <p class="sub num" id="calib"></p>
+  </div>
+  <div class="chartBox"><canvas id="chart" aria-label="垂直加速度Δgの直近2分間の波形"></canvas></div>
+</section>
+
+<div class="marks">
+  <span class="lbl">体感を記録</span>
+  <button class="mk" data-c="LGT" type="button" disabled>LGT</button>
+  <button class="mk" data-c="MOD" type="button" disabled>MOD</button>
+  <button class="mk" data-c="SEV" type="button" disabled>SEV</button>
+  <button class="mk" data-c="memo" type="button" disabled>メモ</button>
+  <span id="lastMark" class="num"></span>
+</div>
+
+<h2>記録したフライト</h2>
+<ul class="sessions" id="sessions"></ul>
+
+<details>
+  <summary>設定</summary>
+  <div class="settings" id="settings"></div>
+  <div class="settingsActions"><button type="button" id="resetSettings">初期値に戻す</button></div>
+</details>
+
+<footer>v1.0　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const G0 = 9.80665;
+const GRAV_TAU = 2.0;          // 重力方向推定のローパス時定数 [s]
+const WARMUP_MS = 8000;        // フィルタ安定待ち
+const KEEP_MS = 60000;         // 窓計算用に保持する最大時間
+const CHART_SPAN = 120000;     // グラフ表示幅 2分
+const BIN_MS = 100;
+
+/* ---------- 設定 ---------- */
+const DEF = {k:4.0, win:10, thL:0.10, thM:0.25, thS:0.45, hp:0.1, lp:2.0, gps:true};
+const SPEC = [
+  ['k',  '係数 k',        '推定EDR = k × σΔg。機体のEDRと見比べて調整します', 0.1, 0.5, 50],
+  ['win','集計窓（秒）',   'σΔgとピークを計算する時間幅', 1, 2, 60],
+  ['thL','LGT のしきい値', '推定EDRがこの値以上でLGT', 0.01, 0, 2],
+  ['thM','MOD のしきい値', '推定EDRがこの値以上でMOD', 0.01, 0, 2],
+  ['thS','SEV のしきい値', '推定EDRがこの値以上でSEV', 0.01, 0, 2],
+  ['hp', 'ハイパス（Hz）', 'これより遅い変化（上昇・旋回など）を除外。次の記録開始から反映', 0.01, 0.02, 1],
+  ['lp', 'ローパス（Hz）', 'これより速い振動（エンジン・マウント）を除外。次の記録開始から反映', 0.1, 0.5, 10],
+];
+let S = loadSettings();
+function loadSettings(){
+  try { return {...DEF, ...JSON.parse(localStorage.getItem('edr-settings') || '{}')}; }
+  catch { return {...DEF}; }
+}
+function saveSettings(){ try { localStorage.setItem('edr-settings', JSON.stringify(S)); } catch {} }
+
+function buildSettings(){
+  const box = $('#settings'); box.innerHTML = '';
+  for (const [key,label,help,step,min,max] of SPEC){
+    const l = document.createElement('label');
+    l.innerHTML = `<span>${label}</span>`;
+    const inp = document.createElement('input');
+    Object.assign(inp, {type:'number', step, min, max, value:S[key], inputMode:'decimal'});
+    inp.addEventListener('change', () => {
+      let v = parseFloat(inp.value);
+      if (!isFinite(v)) v = DEF[key];
+      v = Math.min(max, Math.max(min, v));
+      S[key] = v; inp.value = v; saveSettings(); updateCalib();
+    });
+    const h = document.createElement('span'); h.className = 'help'; h.textContent = help;
+    l.append(inp, h); box.append(l);
+  }
+  const c = document.createElement('label'); c.className = 'check';
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = S.gps;
+  cb.addEventListener('change', () => { S.gps = cb.checked; saveSettings(); });
+  c.append(cb, document.createTextNode('GPSで位置・高度・対地速度も記録する（次の記録開始から反映）'));
+  box.append(c);
+}
+$('#resetSettings').addEventListener('click', () => { S = {...DEF}; saveSettings(); buildSettings(); updateCalib(); });
+function updateCalib(){ $('#calib').textContent = `係数 k = ${S.k}、集計窓 ${S.win} 秒`; }
+
+/* ---------- フィルタ（RBJ biquad） ---------- */
+function makeBiquad(type, f0, fs, Q = Math.SQRT1_2){
+  f0 = Math.min(f0, fs * 0.45);
+  const w = 2*Math.PI*f0/fs, c = Math.cos(w), al = Math.sin(w)/(2*Q);
+  let b0,b1,b2;
+  if (type === 'lp'){ b0=(1-c)/2; b1=1-c; b2=(1-c)/2; }
+  else              { b0=(1+c)/2; b1=-(1+c); b2=(1+c)/2; }
+  const a0=1+al, a1=-2*c, a2=1-al;
+  const B0=b0/a0, B1=b1/a0, B2=b2/a0, A1=a1/a0, A2=a2/a0;
+  let x1=0,x2=0,y1=0,y2=0;
+  return x => { const y=B0*x+B1*x1+B2*x2-A1*y1-A2*y2; x2=x1; x1=x; y2=y1; y1=y; return y; };
+}
+
+/* ---------- 状態 ---------- */
+const st = {
+  running:false, session:null, fs:60, dtEma:0, lastT:0, lastSample:0, nSamples:0, redesigned:false,
+  g:null, hp:null, lp:null, t0:0, cur:0,
+  bt:[], by:[], head:0, bins:[],
+  pending:[], pendingMarks:[], count:0, maxEdr:0, cat:'NIL',
+  pos:null, posT:0, watchId:null, wake:null, timer:null, stalled:false,
+};
+function designFilters(){ st.hp = makeBiquad('hp', S.hp, st.fs); st.lp = makeBiquad('lp', S.lp, st.fs); }
+
+function category(e){ return e >= S.thS ? 'SEV' : e >= S.thM ? 'MOD' : e >= S.thL ? 'LGT' : 'NIL'; }
+
+/* ---------- センサー処理 ---------- */
+function onMotion(e){
+  const r = e.accelerationIncludingGravity;
+  if (!r || r.x == null) return;
+  const now = performance.now();
+  st.lastSample = now;
+  if (st.lastT){
+    const dt = (now - st.lastT)/1000;
+    if (dt > 0 && dt < 0.5) st.dtEma = st.dtEma ? st.dtEma*0.98 + dt*0.02 : dt;
+  }
+  st.lastT = now;
+  st.nSamples++;
+  if (st.nSamples === 1 && e.interval){
+    let iv = e.interval; if (iv < 1) iv *= 1000;      // 古いiOSは秒単位
+    if (iv > 2 && iv < 200){ st.fs = 1000/iv; designFilters(); }
+  }
+  if (!st.redesigned && st.nSamples > 180 && st.dtEma){
+    const fsM = 1/st.dtEma;
+    if (Math.abs(fsM - st.fs)/st.fs > 0.15){ st.fs = fsM; designFilters(); }
+    st.redesigned = true;
+  }
+  const g = st.g || (st.g = {x:r.x, y:r.y, z:r.z});
+  const dt = st.dtEma || 1/st.fs;
+  const a = dt/(GRAV_TAU + dt);
+  g.x += a*(r.x-g.x); g.y += a*(r.y-g.y); g.z += a*(r.z-g.z);
+  const gn = Math.hypot(g.x, g.y, g.z);
+  if (gn < 1) return;
+  const vert = (r.x*g.x + r.y*g.y + r.z*g.z)/gn;     // 見かけの重力方向への射影
+  const y = st.lp(st.hp((vert - gn)/G0));             // Δg [g]
+  st.cur = y;
+  if (now - st.t0 > WARMUP_MS){
+    st.bt.push(now); st.by.push(y);
+    chartAdd(now, y);
+  }
+}
+
+function tick(){
+  const now = performance.now();
+  if (now - st.lastSample > 2000){
+    st.stalled = true;
+    setMsg(st.nSamples
+      ? 'センサーデータが止まっています。この画面を前面に表示したままにしてください。'
+      : 'センサーデータが届きません。HTTPSで開いているか、モーションへのアクセスが許可されているか確認してください。');
+  } else if (st.stalled){ st.stalled = false; setMsg(''); }
+  updateStatus();
+  if (now - st.t0 < WARMUP_MS){
+    $('#edr').textContent = '—'; $('#cat').textContent = '準備中';
+    $('#readout').dataset.cat = '';
+    return;
+  }
+  // 古いサンプルを捨てる
+  while (st.head < st.bt.length && st.bt[st.head] < now - KEEP_MS) st.head++;
+  if (st.head > 4000){ st.bt = st.bt.slice(st.head); st.by = st.by.slice(st.head); st.head = 0; }
+
+  const from = now - S.win*1000, from1 = now - 1000;
+  let n=0, ss=0, pk=0, pk1=0;
+  for (let i = st.bt.length-1; i >= st.head && st.bt[i] >= from; i--){
+    const v = st.by[i], av = Math.abs(v);
+    n++; ss += v*v; if (av > pk) pk = av;
+    if (st.bt[i] >= from1 && av > pk1) pk1 = av;
+  }
+  if (n < 10) return;
+  const sigma = Math.sqrt(ss/n), edr = S.k*sigma, cat = category(edr);
+  st.cat = cat;
+  $('#edr').textContent = edr.toFixed(2);
+  $('#cat').textContent = cat;
+  $('#readout').dataset.cat = cat;
+  $('#sigma').textContent = sigma.toFixed(3) + ' g';
+  $('#peak').textContent = pk.toFixed(2) + ' g';
+
+  const rec = {sid:st.session.id, t:Date.now(), sigma, peak:pk, peak1s:pk1, edr, cat,
+               fs:st.dtEma ? 1/st.dtEma : st.fs, k:S.k, win:S.win};
+  if (st.pos && Date.now() - st.posT < 10000){
+    const c = st.pos;
+    Object.assign(rec, {lat:c.latitude, lon:c.longitude, alt:c.altitude, gs:c.speed, trk:c.heading, acc:c.accuracy});
+  }
+  st.pending.push(rec); st.count++;
+  if (edr > st.maxEdr) st.maxEdr = edr;
+  if (st.pending.length >= 10) flush();
+}
+
+/* ---------- グラフ ---------- */
+const cv = $('#chart'), cx = cv.getContext('2d');
+const css = getComputedStyle(document.documentElement);
+const COL = {NIL:css.getPropertyValue('--dim').trim(), LGT:css.getPropertyValue('--green').trim(),
+             MOD:css.getPropertyValue('--amber').trim(), SEV:css.getPropertyValue('--red').trim()};
+const LINE = css.getPropertyValue('--line').trim(), DIM = COL.NIL;
+let cw = 0, ch = 0;
+
+function chartAdd(now, y){
+  const key = Math.floor(now/BIN_MS), b = st.bins[st.bins.length-1];
+  if (b && b.key === key){ if (y < b.min) b.min = y; if (y > b.max) b.max = y; }
+  else {
+    st.bins.push({key, t:key*BIN_MS, min:y, max:y, cat:st.cat});
+    if (st.bins.length > CHART_SPAN/BIN_MS + 20) st.bins.shift();
+  }
+}
+function sizeCanvas(){
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cw = r.width; ch = r.height;
+  cv.width = Math.round(cw*dpr); cv.height = Math.round(ch*dpr);
+  cx.setTransform(dpr,0,0,dpr,0,0);
+  draw(performance.now());
+}
+function draw(now){
+  if (!cw) return;
+  const padL = 46, padR = 8, top = 8, padB = 22;
+  const pw = cw - padL - padR, ph = ch - top - padB;
+  cx.clearRect(0,0,cw,ch);
+  let mx = 0;
+  for (const b of st.bins) if (now - b.t <= CHART_SPAN) mx = Math.max(mx, -b.min, b.max);
+  const R = [0.5,1,1.5,2].find(s => s >= mx*1.1) || 2;
+  const yOf = v => top + ph/2 - v/R*(ph/2);
+  cx.font = '12px -apple-system,system-ui,sans-serif';
+  cx.textBaseline = 'middle'; cx.textAlign = 'right';
+  for (const v of [-R,-R/2,0,R/2,R]){
+    const y = Math.round(yOf(v)) + .5;
+    cx.strokeStyle = LINE; cx.lineWidth = v === 0 ? 1.5 : 1;
+    cx.beginPath(); cx.moveTo(padL,y); cx.lineTo(padL+pw,y); cx.stroke();
+    cx.fillStyle = DIM; cx.fillText((v>0?'+':'') + v.toFixed(2), padL-6, y);
+  }
+  cx.textAlign = 'center'; cx.textBaseline = 'top';
+  for (let s = 0; s <= CHART_SPAN/1000; s += 30){
+    const x = padL + pw - s*1000/CHART_SPAN*pw;
+    cx.fillStyle = DIM; cx.fillText(s === 0 ? '現在' : `-${s}s`, Math.min(x, padL+pw-14), top+ph+5);
+  }
+  if (!st.bins.length){
+    cx.textBaseline = 'middle';
+    cx.fillStyle = DIM; cx.font = '15px -apple-system,system-ui,sans-serif';
+    cx.fillText(st.running ? 'フィルタ安定待ち（約8秒）' : '記録を開始すると、垂直方向の揺れ（Δg）がここに表示されます', padL+pw/2, top+ph/2 - 24);
+    return;
+  }
+  const bw = Math.max(1, pw/(CHART_SPAN/BIN_MS));
+  for (const b of st.bins){
+    const x = padL + pw - (now - b.t)/CHART_SPAN*pw;
+    if (x < padL) continue;
+    const y1 = yOf(b.max), y2 = yOf(b.min);
+    cx.fillStyle = COL[b.cat];
+    cx.fillRect(x - bw/2, y1, bw, Math.max(1, y2 - y1));
+  }
+}
+let lastDraw = 0;
+function loop(){
+  const now = performance.now();
+  if (st.running && now - lastDraw > 100){
+    draw(now); lastDraw = now;
+    if (now - st.t0 > WARMUP_MS) $('#cur').textContent = (st.cur >= 0 ? '+' : '−') + Math.abs(st.cur).toFixed(2) + ' g';
+  }
+  requestAnimationFrame(loop);
+}
+new ResizeObserver(sizeCanvas).observe(cv);
+
+/* ---------- 保存（IndexedDB） ---------- */
+let dbp;
+function db(){
+  return dbp || (dbp = new Promise((res, rej) => {
+    const q = indexedDB.open('edr-logger', 1);
+    q.onupgradeneeded = () => {
+      const d = q.result;
+      d.createObjectStore('sessions', {keyPath:'id'});
+      d.createObjectStore('recs', {autoIncrement:true}).createIndex('sid','sid');
+      d.createObjectStore('marks', {autoIncrement:true}).createIndex('sid','sid');
+    };
+    q.onsuccess = () => res(q.result);
+    q.onerror = () => rej(q.error);
+  }));
+}
+async function txDo(stores, fn){
+  const d = await db();
+  return new Promise((res, rej) => {
+    const t = d.transaction(stores, 'readwrite');
+    fn(t);
+    t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+  });
+}
+async function reqP(store, method, ...args){
+  const d = await db();
+  return new Promise((res, rej) => {
+    const s = d.transaction(store).objectStore(store);
+    const q = method === 'bySid' ? s.index('sid').getAll(args[0]) : s[method](...args);
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  });
+}
+async function flush(){
+  if (!st.session) return;
+  const recs = st.pending.splice(0), marks = st.pendingMarks.splice(0);
+  Object.assign(st.session, {end:Date.now(), count:st.count, maxEdr:st.maxEdr});
+  const sess = {...st.session};
+  try {
+    await txDo(['recs','marks','sessions'], t => {
+      for (const r of recs) t.objectStore('recs').add(r);
+      for (const m of marks) t.objectStore('marks').add(m);
+      t.objectStore('sessions').put(sess);
+    });
+  } catch (err){
+    st.pending.unshift(...recs); st.pendingMarks.unshift(...marks);
+    setMsg('記録の保存に失敗しました（' + err.message + '）。');
+  }
+}
+
+/* ---------- 開始・停止 ---------- */
+async function start(){
+  setMsg('');
+  if (typeof DeviceMotionEvent === 'undefined'){ setMsg('このブラウザはモーションセンサーに対応していません。'); return; }
+  if (typeof DeviceMotionEvent.requestPermission === 'function'){
+    try {
+      const p = await DeviceMotionEvent.requestPermission();
+      if (p !== 'granted'){ setMsg('モーションへのアクセスが許可されませんでした。ページを再読み込みして、表示される確認で「許可」を選んでください。'); return; }
+    } catch (err){ setMsg('モーションへのアクセスを要求できませんでした（' + err.message + '）。'); return; }
+  }
+  Object.assign(st, {running:true, fs:60, dtEma:0, lastT:0, nSamples:0, redesigned:false, g:null, cur:0,
+    bt:[], by:[], head:0, bins:[], pending:[], pendingMarks:[], count:0, maxEdr:0, cat:'NIL',
+    pos:null, posT:0, stalled:false});
+  designFilters();
+  st.t0 = st.lastSample = performance.now();
+  const id = Date.now();
+  st.session = {id, start:id, end:id, count:0, maxEdr:0, settings:{...S}};
+  await flush();
+  window.addEventListener('devicemotion', onMotion);
+  st.timer = setInterval(tick, 1000);
+  requestWake();
+  if (S.gps && 'geolocation' in navigator){
+    st.watchId = navigator.geolocation.watchPosition(
+      p => { st.pos = p.coords; st.posT = Date.now(); },
+      () => {}, {enableHighAccuracy:true, maximumAge:5000, timeout:60000});
+  }
+  $('#startBtn').textContent = '記録停止'; $('#startBtn').classList.add('running');
+  document.querySelectorAll('.mk').forEach(b => b.disabled = false);
+  $('#lastMark').textContent = '';
+  ['#sigma','#peak','#cur'].forEach(s => $(s).textContent = '—');
+  updateStatus(); draw(performance.now()); renderSessions();
+}
+async function stop(){
+  st.running = false;
+  window.removeEventListener('devicemotion', onMotion);
+  clearInterval(st.timer);
+  if (st.watchId != null){ navigator.geolocation.clearWatch(st.watchId); st.watchId = null; }
+  if (st.wake){ try { await st.wake.release(); } catch {} st.wake = null; }
+  await flush();
+  st.session = null;
+  $('#startBtn').textContent = '記録開始'; $('#startBtn').classList.remove('running');
+  document.querySelectorAll('.mk').forEach(b => b.disabled = true);
+  setMsg(''); updateStatus(); renderSessions();
+}
+$('#startBtn').addEventListener('click', () => st.running ? stop() : start());
+
+async function requestWake(){
+  if (!('wakeLock' in navigator)){ updateStatus(); return; }
+  try {
+    st.wake = await navigator.wakeLock.request('screen');
+    st.wake.addEventListener('release', () => { st.wake = null; updateStatus(); });
+  } catch { st.wake = null; }
+  updateStatus();
+}
+document.addEventListener('visibilitychange', () => {
+  if (!st.running) return;
+  if (document.visibilityState === 'visible') requestWake(); else flush();
+});
+window.addEventListener('pagehide', () => { if (st.running) flush(); });
+
+/* ---------- 体感マーク ---------- */
+document.querySelectorAll('.mk').forEach(b => b.addEventListener('click', () => {
+  if (!st.running) return;
+  const t = Date.now();                     // 押した瞬間の時刻で記録
+  let note = b.dataset.c;
+  if (note === 'memo'){
+    note = prompt('メモ（例: 機体EDR 0.18、FL370 MOD CAT など）');
+    if (!note) return;
+  }
+  st.pendingMarks.push({sid:st.session.id, t, note});
+  $('#lastMark').textContent = `${fmtZ(t, true)} ${note}`;
+}));
+
+/* ---------- 記録一覧・エクスポート ---------- */
+const pad = n => String(n).padStart(2,'0');
+function fmtZ(ms, timeOnly){
+  const d = new Date(ms);
+  const hm = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}Z`;
+  return timeOnly ? hm : `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${hm.slice(0,5)}Z`;
+}
+function fmtDur(ms){ const s = Math.round(ms/1000); return `${Math.floor(s/3600)}:${pad(Math.floor(s%3600/60))}:${pad(s%60)}`; }
+
+async function renderSessions(){
+  const ul = $('#sessions'); ul.innerHTML = '';
+  let all = [];
+  try { all = await reqP('sessions', 'getAll'); } catch {}
+  all.sort((a,b) => b.id - a.id);
+  if (!all.length){ ul.innerHTML = '<li class="empty">まだ記録がありません。上の「記録開始」で計測を始めます。</li>'; return; }
+  for (const s of all){
+    const li = document.createElement('li');
+    const when = document.createElement('span'); when.className = 'when num'; when.textContent = fmtZ(s.start);
+    const meta = document.createElement('span'); meta.className = 'meta num';
+    meta.textContent = `${fmtDur(s.end - s.start)}、${s.count} 件、最大推定EDR ${(s.maxEdr||0).toFixed(2)}`;
+    const ex = document.createElement('button'); ex.type = 'button'; ex.textContent = 'CSVを書き出す';
+    ex.addEventListener('click', () => exportCsv(s));
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '削除';
+    del.addEventListener('click', () => deleteSession(s));
+    if (st.session && st.session.id === s.id){ ex.disabled = del.disabled = true; meta.textContent += '（記録中）'; }
+    li.append(when, meta, ex, del); ul.append(li);
+  }
+}
+
+async function exportCsv(s){
+  const [recs, marks] = await Promise.all([reqP('recs','bySid',s.id), reqP('marks','bySid',s.id)]);
+  recs.sort((a,b) => a.t - b.t);
+  for (const m of marks){
+    let best = null, bd = Infinity;
+    for (const r of recs){ const d = Math.abs(r.t - m.t); if (d < bd){ bd = d; best = r; } }
+    if (best) best.mark = best.mark ? best.mark + ' / ' + m.note : m.note;
+  }
+  const q = v => v == null || (typeof v === 'number' && !isFinite(v)) ? '' : v;
+  const f = (v, d) => v == null || !isFinite(v) ? '' : v.toFixed(d);
+  const lines = ['time_utc,elapsed_s,edr_est,sigma_dg,peak_dg_window,peak_dg_1s,category,sample_hz,k,window_s,lat,lon,gps_alt_m,gps_alt_ft,ground_speed_kt,track_deg,gps_acc_m,mark'];
+  for (const r of recs){
+    lines.push([
+      new Date(r.t).toISOString(), Math.round((r.t - s.start)/1000),
+      f(r.edr,3), f(r.sigma,4), f(r.peak,3), f(r.peak1s,3), r.cat, f(r.fs,1), q(r.k), q(r.win),
+      f(r.lat,6), f(r.lon,6), f(r.alt,0), r.alt == null ? '' : f(r.alt*3.28084,0),
+      r.gs == null ? '' : f(r.gs*1.943844,0), f(r.trk,0), f(r.acc,0),
+      r.mark ? '"' + String(r.mark).replace(/"/g,'""') + '"' : ''
+    ].join(','));
+  }
+  const d = new Date(s.start);
+  const name = `edr_${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}_${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}Z.csv`;
+  const file = new File(['\uFEFF' + lines.join('\n')], name, {type:'text/csv'});
+  if (navigator.canShare && navigator.canShare({files:[file]})){
+    try { await navigator.share({files:[file], title:name}); return; }
+    catch (e){ if (e.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(file), a = document.createElement('a');
+  a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function deleteSession(s){
+  if (!confirm(`${fmtZ(s.start)} の記録を削除します。元に戻せません。`)) return;
+  const d = await db();
+  await new Promise((res, rej) => {
+    const t = d.transaction(['sessions','recs','marks'], 'readwrite');
+    t.objectStore('sessions').delete(s.id);
+    for (const name of ['recs','marks']){
+      t.objectStore(name).index('sid').openKeyCursor(IDBKeyRange.only(s.id)).onsuccess = e => {
+        const c = e.target.result; if (c){ t.objectStore(name).delete(c.primaryKey); c.continue(); }
+      };
+    }
+    t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+  renderSessions();
+}
+
+/* ---------- 表示補助 ---------- */
+function setMsg(t){ const m = $('#msg'); m.textContent = t; m.hidden = !t; }
+function setSt(id, text, cls){ const e = $(id); e.textContent = text; e.className = cls || ''; }
+function updateStatus(){
+  if (!st.running){
+    setSt('#stHz','—'); setSt('#stGps','—'); setSt('#stRec','—');
+    setSt('#stWake', 'wakeLock' in navigator ? '—' : '非対応', 'wakeLock' in navigator ? '' : 'warn');
+    return;
+  }
+  setSt('#stHz', st.dtEma ? (1/st.dtEma).toFixed(0) + ' Hz' : '待機中', st.dtEma && 1/st.dtEma > 30 ? 'ok' : 'warn');
+  if (!S.gps) setSt('#stGps','オフ');
+  else if (st.pos && Date.now() - st.posT < 10000) setSt('#stGps', '±' + Math.round(st.pos.accuracy) + ' m', 'ok');
+  else setSt('#stGps', '測位なし', 'warn');
+  setSt('#stWake', !('wakeLock' in navigator) ? '非対応' : st.wake ? 'オン' : 'オフ', st.wake ? 'ok' : 'warn');
+  setSt('#stRec', `${fmtDur(Date.now() - st.session.start)}（${st.count} 件）`, 'ok');
+}
+
+/* ---------- 起動 ---------- */
+if (!window.isSecureContext) setMsg('HTTPSで開いていないため、センサーを利用できません。GitHub PagesなどHTTPSのURLから開いてください。');
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+buildSettings(); updateCalib(); updateStatus(); renderSessions();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
