@@ -194,7 +194,7 @@ footer{margin-top:32px;color:var(--dim);font-size:13px}
   <div class="settingsActions"><button type="button" id="resetSettings">初期値に戻す</button></div>
 </details>
 
-<footer>v1.2　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
+<footer>v1.3　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
 
 <script>
 'use strict';
@@ -700,21 +700,43 @@ async function renderSessions(){
     meta.textContent = `${fmtDur(s.end - s.start)}、${s.count} 件、最大推定EDR ${(s.maxEdr||0).toFixed(2)}`;
     const ex = document.createElement('button'); ex.type = 'button'; ex.textContent = 'CSVを書き出す';
     ex.addEventListener('click', () => exportCsv(s));
+    const km = document.createElement('button'); km.type = 'button'; km.textContent = 'Google Earthで開く';
+    km.addEventListener('click', () => exportKml(s));
     const del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '削除';
     del.addEventListener('click', () => deleteSession(s));
-    if (st.session && st.session.id === s.id){ ex.disabled = del.disabled = true; meta.textContent += '（記録中）'; }
-    li.append(when, meta, ex, del); ul.append(li);
+    if (st.session && st.session.id === s.id){ ex.disabled = km.disabled = del.disabled = true; meta.textContent += '（記録中）'; }
+    li.append(when, meta, ex, km, del); ul.append(li);
   }
 }
 
-async function exportCsv(s){
+async function loadSession(s){
   const [recs, marks] = await Promise.all([reqP('recs','bySid',s.id), reqP('marks','bySid',s.id)]);
   recs.sort((a,b) => a.t - b.t);
+  marks.sort((a,b) => a.t - b.t);
   for (const m of marks){
     let best = null, bd = Infinity;
     for (const r of recs){ const d = Math.abs(r.t - m.t); if (d < bd){ bd = d; best = r; } }
+    m.rec = best;
     if (best) best.mark = best.mark ? best.mark + ' / ' + m.note : m.note;
   }
+  return {recs, marks};
+}
+function fileStem(s){
+  const d = new Date(s.start);
+  return `edr_${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}_${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}Z`;
+}
+async function shareFile(file){
+  if (navigator.canShare && navigator.canShare({files:[file]})){
+    try { await navigator.share({files:[file], title:file.name}); return; }
+    catch (e){ if (e.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(file), a = document.createElement('a');
+  a.href = url; a.download = file.name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function exportCsv(s){
+  const {recs} = await loadSession(s);
   const q = v => v == null || (typeof v === 'number' && !isFinite(v)) ? '' : v;
   const f = (v, d) => v == null || !isFinite(v) ? '' : v.toFixed(d);
   const lines = ['time_utc,elapsed_s,edr_est,sigma_dg,peak_dg_window,peak_dg_1s,category,k_eff,k0,correction,weight_lbs,fl,fl_src,tas_kt,tas_src,sample_hz,window_s,lat,lon,gps_alt_m,gps_alt_ft,ground_speed_kt,track_deg,gps_acc_m,mark'];
@@ -729,16 +751,91 @@ async function exportCsv(s){
       r.mark ? '"' + String(r.mark).replace(/"/g,'""') + '"' : ''
     ].join(','));
   }
-  const d = new Date(s.start);
-  const name = `edr_${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}_${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}Z.csv`;
-  const file = new File(['\uFEFF' + lines.join('\n')], name, {type:'text/csv'});
-  if (navigator.canShare && navigator.canShare({files:[file]})){
-    try { await navigator.share({files:[file], title:name}); return; }
-    catch (e){ if (e.name === 'AbortError') return; }
+  await shareFile(new File(['\uFEFF' + lines.join('\n')], fileStem(s) + '.csv', {type:'text/csv'}));
+}
+
+/* ---------- KML（Google Earth / マイマップ） ---------- */
+const KML_COL = {NIL:'ffa39686', LGT:'ff7de35b', MOD:'ff3ba9f2', SEV:'ff525aff', MARK:'ffe0cd46'};  // aabbggrr
+const KML_W   = {NIL:2, LGT:3, MOD:6, SEV:9};
+const EVENT_GAP_S = 60, EVENT_MIN_S = 10, TRACK_GAP_S = 30;
+const xmlEsc = v => String(v).replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+const hasPos = r => r.lat != null && r.lon != null;
+const flOf = r => r.alt != null ? 'GPS FL' + Math.round(r.alt*3.28084/100) : (r.fl != null ? 'FL' + Math.round(r.fl) : '—');
+
+// MOD以上の秒を「揺れイベント」にまとめる（60秒以内の再発は同じイベント）
+function findEvents(recs){
+  const ev = []; let cur = null;
+  for (const r of recs){
+    if (r.cat !== 'MOD' && r.cat !== 'SEV') continue;
+    if (cur && (r.t - cur.end)/1000 <= EVENT_GAP_S){
+      cur.end = r.t; cur.n++;
+      if (r.edr > cur.peak.edr) cur.peak = r;
+      if (hasPos(r) && (!cur.peakPos || r.edr > cur.peakPos.edr)) cur.peakPos = r;
+    } else {
+      cur = {start:r.t, end:r.t, n:1, peak:r, peakPos:hasPos(r) ? r : null};
+      ev.push(cur);
+    }
   }
-  const url = URL.createObjectURL(file), a = document.createElement('a');
-  a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  // 10秒未満の単発は除外。ただしSEVは短くても残す
+  return ev.filter(e => (e.end - e.start)/1000 >= EVENT_MIN_S || e.peak.cat === 'SEV');
+}
+
+async function exportKml(s){
+  const {recs, marks} = await loadSession(s);
+  const pos = recs.filter(hasPos);
+  if (!pos.length){ setMsg('この記録には位置情報がないため、地図に表示できません。'); return; }
+  const absAlt = pos.every(r => r.alt != null);
+  const altMode = absAlt ? 'absolute' : 'clampToGround';
+  const coord = r => `${r.lon.toFixed(6)},${r.lat.toFixed(6)},${absAlt ? Math.round(r.alt) : 0}`;
+
+  // 航跡: 同じカテゴリが続く区間ごとに1本の線（30秒以上の欠測で切る）
+  const segs = []; let seg = null, prev = null;
+  for (const r of pos){
+    const gap = prev && (r.t - prev.t)/1000 > TRACK_GAP_S;
+    if (!seg || gap || r.cat !== seg.cat){
+      seg = {cat:r.cat, pts: (prev && !gap) ? [prev] : []};   // 前の区間とつなげる
+      segs.push(seg);
+    }
+    seg.pts.push(r); prev = r;
+  }
+  const lineStyles = Object.keys(KML_W).map(c =>
+    `<Style id="l${c}"><LineStyle><color>${KML_COL[c]}</color><width>${KML_W[c]}</width></LineStyle></Style>`).join('');
+  const pinStyles = ['MOD','SEV','MARK'].map(c =>
+    `<Style id="p${c}"><IconStyle><color>${KML_COL[c]}</color><scale>${c === 'MARK' ? 0.8 : c === 'SEV' ? 1.5 : 1.2}</scale>` +
+    `<Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>` +
+    `<LabelStyle><scale>${c === 'MARK' ? 0.7 : 0.9}</scale></LabelStyle></Style>`).join('');
+
+  const track = segs.filter(g => g.pts.length > 1).map(g =>
+    `<Placemark><name>${g.cat}</name><styleUrl>#l${g.cat}</styleUrl><LineString><tessellate>1</tessellate>` +
+    `<altitudeMode>${altMode}</altitudeMode><coordinates>${g.pts.map(coord).join(' ')}</coordinates></LineString></Placemark>`).join('');
+
+  const events = findEvents(recs).filter(e => e.peakPos).map(e => {
+    const p = e.peakPos, dur = Math.round((e.end - e.start)/1000) + 1;
+    const desc = `開始 ${fmtZ(e.start, true)}<br>終了 ${fmtZ(e.end, true)}<br>継続 ${dur} 秒<br>` +
+      `最大推定EDR ${e.peak.edr.toFixed(2)}（${e.peak.cat}）<br>最大地点 ${fmtZ(p.t, true)} ${flOf(p)}<br>` +
+      `ピークΔg ${p.peak != null ? p.peak.toFixed(2) + ' g' : '—'}`;
+    return `<Placemark><name>${e.peak.cat} ${e.peak.edr.toFixed(2)}</name><styleUrl>#p${e.peak.cat}</styleUrl>` +
+      `<description><![CDATA[${desc}]]></description><Point><altitudeMode>${altMode}</altitudeMode><coordinates>${coord(p)}</coordinates></Point></Placemark>`;
+  }).join('');
+
+  const markPins = marks.filter(m => m.rec && hasPos(m.rec)).map(m => {
+    const r = m.rec;
+    const desc = `${fmtZ(m.t, true)} ${flOf(r)}<br>推定EDR ${r.edr.toFixed(2)}（${r.cat}）<br>${xmlEsc(m.note)}`;
+    const name = m.note.length > 24 ? m.note.slice(0, 24) + '…' : m.note;
+    return `<Placemark><name>${xmlEsc(name)}</name><styleUrl>#pMARK</styleUrl>` +
+      `<description><![CDATA[${desc}]]></description><Point><altitudeMode>${altMode}</altitudeMode><coordinates>${coord(r)}</coordinates></Point></Placemark>`;
+  }).join('');
+
+  const title = `EDR Logger ${fmtZ(s.start)}`;
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${xmlEsc(title)}</name>
+<description>航跡の色: 灰 NIL、緑 LGT、アンバー MOD、赤 SEV。ピンはMOD以上の揺れのまとまりごとに最大地点へ。</description>
+${lineStyles}${pinStyles}
+<Folder><name>航跡</name>${track}</Folder>
+<Folder><name>MOD以上の揺れ</name>${events}</Folder>
+<Folder><name>体感・機体EDR・メモ</name>${markPins}</Folder>
+</Document></kml>`;
+  await shareFile(new File([kml], fileStem(s) + '.kml', {type:'application/vnd.google-earth.kml+xml'}));
 }
 
 async function deleteSession(s){
