@@ -144,6 +144,26 @@ footer{margin-top:32px;color:var(--dim);font-size:13px}
 </section>
 
 <section class="panel">
+  <h3>体感・機体EDRを入力（記録中に入力すると k₀ を自動校正）</h3>
+  <div class="calrow">
+    <div class="grp">
+      <span class="lbl">体感</span>
+      <button class="mk" data-c="LGT" type="button" disabled>LGT</button>
+      <button class="mk" data-c="MOD" type="button" disabled>MOD</button>
+      <button class="mk" data-c="SEV" type="button" disabled>SEV</button>
+    </div>
+    <div class="grp">
+      <span class="lbl">機体EDR</span>
+      <input id="inEdr" class="num" type="number" inputmode="decimal" step="0.01" min="0" max="2" placeholder="0.18" disabled>
+      <button class="mk" data-c="edr" id="edrBtn" type="button" disabled>校正</button>
+    </div>
+    <button class="mk" data-c="memo" type="button" disabled>メモ</button>
+    <span id="lastMark" class="num"></span>
+  </div>
+  <p class="kline num" id="kline"></p>
+</section>
+
+<section class="panel">
   <h3>飛行状態（入力すると、その時点から反映）</h3>
   <div class="fstate num">
     <label>現在重量（lbs）
@@ -165,26 +185,6 @@ footer{margin-top:32px;color:var(--dim);font-size:13px}
   </div>
 </section>
 
-<section class="panel">
-  <h3>体感・機体EDRを入力（記録中に入力すると k₀ を自動校正）</h3>
-  <div class="calrow">
-    <div class="grp">
-      <span class="lbl">体感</span>
-      <button class="mk" data-c="LGT" type="button" disabled>LGT</button>
-      <button class="mk" data-c="MOD" type="button" disabled>MOD</button>
-      <button class="mk" data-c="SEV" type="button" disabled>SEV</button>
-    </div>
-    <div class="grp">
-      <span class="lbl">機体EDR</span>
-      <input id="inEdr" class="num" type="number" inputmode="decimal" step="0.01" min="0" max="2" placeholder="0.18" disabled>
-      <button class="mk" data-c="edr" id="edrBtn" type="button" disabled>校正</button>
-    </div>
-    <button class="mk" data-c="memo" type="button" disabled>メモ</button>
-    <span id="lastMark" class="num"></span>
-  </div>
-  <p class="kline num" id="kline"></p>
-</section>
-
 <h2>記録したフライト</h2>
 <ul class="sessions" id="sessions"></ul>
 
@@ -194,7 +194,7 @@ footer{margin-top:32px;color:var(--dim);font-size:13px}
   <div class="settingsActions"><button type="button" id="resetSettings">初期値に戻す</button></div>
 </details>
 
-<footer>v1.1　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
+<footer>v1.2　推定値は機上EDRの代替ではありません。運航上の判断には使用しないでください。</footer>
 
 <script>
 'use strict';
